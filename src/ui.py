@@ -145,7 +145,6 @@ class TroikaApp(Gtk.ApplicationWindow):
         self.status_label.set_text("Starting...")
 
         if record_type == "screen":
-            # Initiate Portal flow
             try:
                 self.portal = ScreencastPortal()
                 self.portal.request_screencast(
@@ -153,6 +152,8 @@ class TroikaApp(Gtk.ApplicationWindow):
                     self._on_portal_cancel
                 )
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self.status_label.set_text(f"Portal error: {e}")
                 self.start_btn.set_sensitive(True)
         else:

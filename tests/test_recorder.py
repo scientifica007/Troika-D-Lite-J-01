@@ -36,6 +36,38 @@ class TestRecorder(unittest.TestCase):
         pipe_str4 = self.recorder.build_pipeline_string('screen', 15, 'mic', mic, '/tmp/out4.mkv', '100', 42)
         self.assertIn('pipewiresrc path=100 fd=42 ! videoconvert', pipe_str4)
 
+    def test_portal_variant_construction(self):
+        # We need to verify that GLib Variant construction does not throw exceptions
+        import gi
+        gi.require_version('GLib', '2.0')
+        from gi.repository import GLib
+
+        token = "test_token"
+
+        # CreateSession test
+        options_cs = {
+            'handle_token': GLib.Variant('s', token),
+            'session_handle_token': GLib.Variant('s', token),
+        }
+        var_cs = GLib.Variant('(a{sv})', (options_cs,))
+        self.assertEqual(var_cs.get_type_string(), '(a{sv})')
+
+        # SelectSources test
+        options_ss = {
+            'handle_token': GLib.Variant('s', token),
+            'multiple': GLib.Variant('b', False),
+            'types': GLib.Variant('u', 1)
+        }
+        var_ss = GLib.Variant('(oa{sv})', ("/session/path", options_ss))
+        self.assertEqual(var_ss.get_type_string(), '(oa{sv})')
+
+        # Start test
+        options_st = {
+            'handle_token': GLib.Variant('s', token)
+        }
+        var_st = GLib.Variant('(osa{sv})', ("/session/path", "", options_st))
+        self.assertEqual(var_st.get_type_string(), '(osa{sv})')
+
     def test_record_cycle(self):
         # We can try to run a brief 1-second recording in test mode
         mic = AudioDevice("fake_mic", "Fake Mic", False)

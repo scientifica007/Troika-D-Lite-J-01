@@ -25,6 +25,7 @@ class ScreencastPortal:
         return f"troika_{self.request_token}"
 
     def request_screencast(self, on_success, on_cancel):
+        print("CreateSession-build")
         self.on_success = on_success
         self.on_cancel = on_cancel
 
@@ -44,13 +45,12 @@ class ScreencastPortal:
         )
         self.request_subs.append(sub_id)
 
-        options = GLib.Variant('a{sv}', {
+        options = {
             'handle_token': GLib.Variant('s', token),
             'session_handle_token': GLib.Variant('s', token),
-            'multiple': GLib.Variant('b', False),
-            'types': GLib.Variant('u', 1) # Monitor only
-        })
+        }
 
+        print("CreateSession-call")
         self.bus.call(
             self.portal_dest,
             self.portal_path,
@@ -78,6 +78,7 @@ class ScreencastPortal:
         self.select_sources()
 
     def select_sources(self):
+        print("SelectSources-build")
         token = self.next_token()
         req_path = self.request_path_prefix + token
 
@@ -93,12 +94,13 @@ class ScreencastPortal:
         )
         self.request_subs.append(sub_id)
 
-        options = GLib.Variant('a{sv}', {
+        options = {
             'handle_token': GLib.Variant('s', token),
             'multiple': GLib.Variant('b', False),
             'types': GLib.Variant('u', 1) # Monitor
-        })
+        }
 
+        print("SelectSources-call")
         self.bus.call(
             self.portal_dest,
             self.portal_path,
@@ -125,6 +127,7 @@ class ScreencastPortal:
         self.start_session()
 
     def start_session(self):
+        print("Start-build")
         token = self.next_token()
         req_path = self.request_path_prefix + token
 
@@ -140,10 +143,11 @@ class ScreencastPortal:
         )
         self.request_subs.append(sub_id)
 
-        options = GLib.Variant('a{sv}', {
+        options = {
             'handle_token': GLib.Variant('s', token)
-        })
+        }
 
+        print("Start-call")
         self.bus.call(
             self.portal_dest,
             self.portal_path,
@@ -180,17 +184,20 @@ class ScreencastPortal:
         self.open_pipewire_remote()
 
     def open_pipewire_remote(self):
-        options = GLib.Variant('a{sv}', {})
+        print("OpenPipeWireRemote")
+        options = {}
+
         self.bus.call_with_unix_fd_list(
             self.portal_dest,
             self.portal_path,
             "org.freedesktop.portal.ScreenCast",
             "OpenPipeWireRemote",
             GLib.Variant('(oa{sv})', (self.session_path, options)),
+            None, # reply_type
             Gio.DBusCallFlags.NONE,
             -1,
-            None,
-            None,
+            None, # fd_list
+            None, # cancellable
             self.on_open_pipewire_remote_done,
             None
         )
@@ -198,23 +205,30 @@ class ScreencastPortal:
     def on_open_pipewire_remote_done(self, source, result, user_data):
         try:
             res, fd_list = source.call_with_unix_fd_list_finish(result)
-            if fd_list and fd_list.get_length() > 0:
-                fd = fd_list.get(0)
+            # The handle index is in res (a Variant tuple)
+            handle_index = res.unpack()[0]
+
+            if fd_list and fd_list.get_length() > handle_index:
+                fd = fd_list.get(handle_index)
             else:
                 fd = -1 # Should not happen typically, but handled as fallback
 
             if self.on_success:
                 self.on_success(self.node_id, fd)
         except Exception as e:
-            print("DBus Call Error (OpenPipeWireRemote):", e)
+            import traceback
+            traceback.print_exc()
+            print("DBus Call Error (OpenPipeWireRemote):", type(e), repr(e))
             if self.on_cancel:
-                self.on_cancel(str(e))
+                self.on_cancel(f"OpenPipeWireRemote error: {e}")
 
     def on_call_done(self, source, result, user_data):
         try:
             source.call_finish(result)
         except Exception as e:
-            print("DBus Call Error:", e)
+            import traceback
+            traceback.print_exc()
+            print("DBus Call Error:", type(e), repr(e))
             if self.on_cancel:
                 self.on_cancel(str(e))
 

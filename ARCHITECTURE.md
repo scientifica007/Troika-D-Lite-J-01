@@ -8,7 +8,7 @@ Troika D Lite uses a Python GTK4 frontend and a GStreamer backend.
 - Media processing runs in GStreamer's internal threads.
 
 ## Screen Capture Path
-Uses `pipewiresrc` mapped explicitly to a `path` (node ID) that is authorized by the XDG Desktop Portal (`org.freedesktop.portal.ScreenCast`). Troika D Lite implements a native asynchronous DBus client using `Gio.DBusProxy` to negotiate the session, select monitor sources, and retrieve the authorized PipeWire node ID before creating the GStreamer pipeline. This guarantees it captures the Wayland desktop, rather than falling back to an unprompted webcam. The frames are passed through `videoconvert` and `videorate` to enforce monotonic timestamps and the requested framerate.
+Uses `pipewiresrc` mapped explicitly to a `path` (node ID) that is authorized by the XDG Desktop Portal (`org.freedesktop.portal.ScreenCast`). Troika D Lite implements a native asynchronous DBus client using `Gio.DBusProxy` to negotiate the session, select monitor sources, and retrieve the authorized PipeWire node ID and file descriptor before creating the GStreamer pipeline. This guarantees it captures the Wayland desktop, rather than falling back to an unprompted webcam. The frames are passed through `videoconvert` and `videorate` to enforce monotonic timestamps and the requested framerate.
 
 ## Audio Capture Path
 Uses `pulsesrc` to capture audio. PulseAudio/Pipewire handles the device abstraction.

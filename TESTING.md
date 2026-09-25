@@ -2,9 +2,10 @@
 
 ## Automated Tests
 Located in `tests/`. They verify:
-- Logic for fetching available devices without failing.
-- Construction of GStreamer pipelines based on the parameters (mode, fps, etc.).
-- A self-test pipeline cycle that uses `videotestsrc` and `audiotestsrc` to simulate a recording session without invoking a real Wayland portal.
+- Logic for fetching available devices safely.
+- Propagation of DBus Portal node ID into the pipeline generation.
+- Complete asynchronous finalization and EOS bus message handling.
+- A strong media self-test pipeline cycle that uses `videotestsrc` and multiple `audiotestsrc` elements to test the heavy mode (`video + system audio + mic`) without invoking a real Wayland portal.
 
 Run with:
 ```bash

@@ -41,5 +41,5 @@ python3 -m src.main
 2. Set FPS (15 or 30)
 3. Select Audio Options (No Audio, Microphone, System Audio, System Audio + Microphone)
 4. Choose Microphone if applicable.
-5. Click Start Recording. If it's a screen recording, a Wayland desktop portal window will prompt you to share your screen.
-6. Click Stop Recording to finish. Output is saved to the designated folder.
+5. Click Start Recording. If it's a screen recording, a Wayland DBus Desktop Portal window will prompt you to authorize your screen sharing session.
+6. Click Stop Recording to finish. Output is finalized securely and saved to the designated folder.

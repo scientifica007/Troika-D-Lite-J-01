@@ -3,6 +3,7 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib
 from .devices import get_audio_devices
 from .recorder import Recorder, RecorderError
+from .portal import ScreencastPortal
 import os
 import time
 
@@ -14,8 +15,11 @@ class TroikaApp(Gtk.ApplicationWindow):
 
         self.recorder = Recorder()
         self.recorder.on_error_callback = self.on_recorder_error
+        self.recorder.on_stop_callback = self.on_recorder_stopped
         self.start_time = 0
         self.timer_id = None
+
+        self.portal = None
 
         self.build_ui()
         self.refresh_devices()
@@ -137,9 +141,33 @@ class TroikaApp(Gtk.ApplicationWindow):
 
         output_folder = self.folder_entry.get_text()
 
+        self.start_btn.set_sensitive(False)
+        self.status_label.set_text("Starting...")
+
+        if record_type == "screen":
+            # Initiate Portal flow
+            try:
+                self.portal = ScreencastPortal()
+                self.portal.request_screencast(
+                    lambda node_id, fd: self._start_recording_internal(record_type, fps, audio_option, selected_mic, output_folder, str(node_id), fd),
+                    self._on_portal_cancel
+                )
+            except Exception as e:
+                self.status_label.set_text(f"Portal error: {e}")
+                self.start_btn.set_sensitive(True)
+        else:
+            self._start_recording_internal(record_type, fps, audio_option, selected_mic, output_folder, None, None)
+
+    def _on_portal_cancel(self, msg):
+        self.status_label.set_text(f"Portal cancelled: {msg}")
+        self.start_btn.set_sensitive(True)
+        if self.portal:
+            self.portal.cleanup()
+            self.portal = None
+
+    def _start_recording_internal(self, record_type, fps, audio_option, selected_mic, output_folder, node_id, fd):
         try:
-            self.recorder.start_recording(record_type, fps, audio_option, selected_mic, output_folder)
-            self.start_btn.set_sensitive(False)
+            self.recorder.start_recording(record_type, fps, audio_option, selected_mic, output_folder, node_id, fd)
             self.stop_btn.set_sensitive(True)
             self.status_label.set_text("Recording...")
 
@@ -148,6 +176,10 @@ class TroikaApp(Gtk.ApplicationWindow):
 
         except RecorderError as e:
             self.status_label.set_text(f"Error: {e}")
+            self.start_btn.set_sensitive(True)
+            if self.portal:
+                self.portal.cleanup()
+                self.portal = None
 
     def on_recorder_error(self, err_msg):
         self.start_btn.set_sensitive(True)
@@ -156,12 +188,22 @@ class TroikaApp(Gtk.ApplicationWindow):
         if self.timer_id:
             GLib.source_remove(self.timer_id)
             self.timer_id = None
+        if self.portal:
+            self.portal.cleanup()
+            self.portal = None
 
-    def on_stop_clicked(self, btn):
-        self.recorder.stop_recording()
+    def on_recorder_stopped(self):
         self.start_btn.set_sensitive(True)
         self.stop_btn.set_sensitive(False)
         self.status_label.set_text("Saved to " + str(self.recorder.output_file))
         if self.timer_id:
             GLib.source_remove(self.timer_id)
             self.timer_id = None
+        if self.portal:
+            self.portal.cleanup()
+            self.portal = None
+
+    def on_stop_clicked(self, btn):
+        self.stop_btn.set_sensitive(False)
+        self.status_label.set_text("Finalizing recording...")
+        self.recorder.stop_recording()

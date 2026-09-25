@@ -20,7 +20,7 @@ class Recorder:
         # Test mode for headless CI
         self.test_mode = False
 
-    def build_pipeline_string(self, record_type, fps, audio_option, mic_device, output_path):
+    def build_pipeline_string(self, record_type, fps, audio_option, mic_device, output_path, node_id=None, fd=None):
         """
         Builds the GStreamer pipeline string dynamically based on requirements.
         - record_type: 'audio_only' or 'screen'
@@ -45,7 +45,9 @@ class Recorder:
             if self.test_mode:
                 video_src = f"videotestsrc ! video/x-raw,framerate={fps}/1"
             else:
-                video_src = f"pipewiresrc ! videoconvert ! videorate ! video/x-raw,framerate={fps}/1"
+                pw_path = f"path={node_id}" if node_id else ""
+                pw_fd = f"fd={fd}" if fd and fd != -1 else ""
+                video_src = f"pipewiresrc {pw_path} {pw_fd} ! videoconvert ! videorate ! video/x-raw,framerate={fps}/1"
 
             video_enc = f"{video_src} ! queue max-size-buffers=3 ! x264enc speed-preset=ultrafast tune=zerolatency key-int-max={fps} threads=2 ! h264parse ! queue ! mux."
             pipeline_parts.append(video_enc)
@@ -72,7 +74,7 @@ class Recorder:
 
         return " ".join(pipeline_parts)
 
-    def start_recording(self, record_type, fps, audio_option, mic_device, output_folder):
+    def start_recording(self, record_type, fps, audio_option, mic_device, output_folder, node_id=None, fd=None):
         if self.is_recording:
             raise RecorderError("Already recording")
 
@@ -83,7 +85,7 @@ class Recorder:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.output_file = os.path.join(output_folder, f"Troika-D-Lite_{timestamp}.mkv")
 
-        pipeline_str = self.build_pipeline_string(record_type, fps, audio_option, mic_device, self.output_file)
+        pipeline_str = self.build_pipeline_string(record_type, fps, audio_option, mic_device, self.output_file, node_id, fd)
 
         print("Pipeline:", pipeline_str)
         try:
@@ -111,19 +113,21 @@ class Recorder:
         # Send EOS to finalize the file properly
         self.pipeline.send_event(Gst.Event.new_eos())
 
-        # Wait for EOS on bus, but don't block indefinitely if we are just shutting down cleanly
-        # However, for a UI app it's better not to block here at all,
-        # but rather let the on_message handler handle EOS and cleanup.
-        # But to satisfy the immediate "stop" requirement in the simplest way without freezing,
-        # we do a very short poll or just rely on bus messages.
+        # Do not block here. We will handle EOS in on_message.
+        # Start a fallback timeout just in case EOS never comes
+        self._stop_timeout_id = GLib.timeout_add_seconds(10, self._force_stop)
 
-        # Wait up to 1 second for EOS
-        bus = self.pipeline.get_bus()
-        bus.timed_pop_filtered(1 * Gst.SECOND, Gst.MessageType.EOS | Gst.MessageType.ERROR)
-
-        self.pipeline.set_state(Gst.State.NULL)
-        self.pipeline = None
+    def _force_stop(self):
+        print("EOS timeout reached, forcing pipeline to NULL.")
+        if self.pipeline:
+            self.pipeline.set_state(Gst.State.NULL)
+            self.pipeline = None
         self.is_recording = False
+
+        if hasattr(self, 'on_stop_callback') and self.on_stop_callback:
+            GLib.idle_add(self.on_stop_callback)
+
+        return False # don't repeat timeout
 
     def on_message(self, bus, message):
         t = message.type
@@ -140,3 +144,13 @@ class Recorder:
 
         elif t == Gst.MessageType.EOS:
             print("End-Of-Stream reached.")
+            if hasattr(self, '_stop_timeout_id'):
+                GLib.source_remove(self._stop_timeout_id)
+                del self._stop_timeout_id
+
+            self.pipeline.set_state(Gst.State.NULL)
+            self.pipeline = None
+            self.is_recording = False
+
+            if hasattr(self, 'on_stop_callback') and self.on_stop_callback:
+                GLib.idle_add(self.on_stop_callback)

@@ -8,7 +8,7 @@ Troika D Lite uses a Python GTK4 frontend and a GStreamer backend.
 - Media processing runs in GStreamer's internal threads.
 
 ## Screen Capture Path
-Uses `pipewiresrc` which internally integrates with the XDG Desktop Portal for Wayland screen sharing. The frames are passed through `videoconvert` and `videorate` to enforce monotonic timestamps and the requested framerate.
+Uses `pipewiresrc` mapped explicitly to a `path` (node ID) that is authorized by the XDG Desktop Portal (`org.freedesktop.portal.ScreenCast`). Troika D Lite implements a native asynchronous DBus client using `Gio.DBusProxy` to negotiate the session, select monitor sources, and retrieve the authorized PipeWire node ID before creating the GStreamer pipeline. This guarantees it captures the Wayland desktop, rather than falling back to an unprompted webcam. The frames are passed through `videoconvert` and `videorate` to enforce monotonic timestamps and the requested framerate.
 
 ## Audio Capture Path
 Uses `pulsesrc` to capture audio. PulseAudio/Pipewire handles the device abstraction.
@@ -25,4 +25,4 @@ Queues with generous bounds (e.g., 3 frames for video before encoding, and up to
 - Audio: `avenc_aac` for reliable and standard audio encoding.
 
 ## Cleanup/Finalization
-Stopping a recording sends a GStreamer End-Of-Stream (EOS) event through the pipeline, which safely flushes buffers, writes container headers correctly, and closes the file before setting the pipeline state to NULL.
+Stopping a recording asynchronously sends a GStreamer End-Of-Stream (EOS) event through the pipeline. The main application loop listens for the EOS confirmation message on the bus before transitioning the pipeline state to NULL and notifying the user. A 10-second bounded recovery timeout prevents the UI from freezing indefinitely if the muxer hangs during finalization. This ensures files are properly flushed and closed without blocking the GUI.

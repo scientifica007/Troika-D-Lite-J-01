@@ -49,26 +49,29 @@ class Recorder:
                 pw_fd = f"fd={fd}" if fd and fd != -1 else ""
                 video_src = f"pipewiresrc {pw_path} {pw_fd} ! videoconvert ! videorate ! video/x-raw,framerate={fps}/1"
 
-            video_enc = f"{video_src} ! queue max-size-buffers=3 ! x264enc speed-preset=ultrafast tune=zerolatency key-int-max={fps} threads=2 ! h264parse ! queue ! mux."
+            bitrate = 4000 if fps == 15 else 6000
+            video_enc = f"{video_src} ! queue max-size-buffers=3 ! x264enc speed-preset=ultrafast tune=zerolatency bitrate={bitrate} key-int-max={fps} threads=2 ! h264parse ! queue ! mux."
             pipeline_parts.append(video_enc)
 
         if has_mic or has_system:
-            pipeline_parts.append("audiomixer name=mix ! queue max-size-buffers=10 ! audioconvert ! avenc_aac ! queue ! mux.")
+            # Enlarge queue after audiomixer to 3 seconds to prevent encoder/muxer backpressure from dropping mic frames.
+            pipeline_parts.append("audiomixer name=mix ! queue max-size-time=3000000000 max-size-bytes=0 max-size-buffers=0 ! audioconvert ! avenc_aac ! queue ! mux.")
 
             if has_mic:
                 if self.test_mode:
-                    mic_src = "audiotestsrc wave=sine freq=440"
+                    mic_src = "audiotestsrc wave=sine freq=440 is-live=true"
                 else:
                     device = mic_device.name if mic_device else "default"
-                    mic_src = f"pulsesrc device={device}"
+                    # Add do-timestamp=true so pulsesrc aligns with the pipeline clock accurately.
+                    mic_src = f"pulsesrc device={device} do-timestamp=true"
 
                 pipeline_parts.append(f"{mic_src} ! queue max-size-time=1000000000 ! audioconvert ! audioresample ! mix.")
 
             if has_system:
                 if self.test_mode:
-                    sys_src = "audiotestsrc wave=sine freq=880"
+                    sys_src = "audiotestsrc wave=sine freq=880 is-live=true"
                 else:
-                    sys_src = "pulsesrc device=@DEFAULT_MONITOR@"
+                    sys_src = "pulsesrc device=@DEFAULT_MONITOR@ do-timestamp=true"
 
                 pipeline_parts.append(f"{sys_src} ! queue max-size-time=1000000000 ! audioconvert ! audioresample ! mix.")
 
@@ -134,6 +137,11 @@ class Recorder:
         if t == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
             print(f"Error: {err}, {debug}")
+
+            if hasattr(self, '_stop_timeout_id'):
+                GLib.source_remove(self._stop_timeout_id)
+                del self._stop_timeout_id
+
             self.pipeline.set_state(Gst.State.NULL)
             self.pipeline = None
             self.is_recording = False

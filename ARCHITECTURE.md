@@ -18,10 +18,11 @@ For microphones, it captures the default source. For system audio, it captures t
 Both audio and video branches feed into an `audiomixer` (for audio streams) and `matroskamux` (for containerizing). Timestamps are generated monotonically by the sources. The queues are configured to prevent slow encoders from blocking the capture sources, prioritizing continuity.
 
 ## Buffering/Backpressure
-Queues with generous bounds (e.g., 3 frames for video before encoding, and up to 10 buffers for mixed audio) are used to absorb scheduler jitter on older hardware, avoiding backpressure that might lead to dropped frames at the source.
+Queues with generous bounds are used to absorb scheduler jitter on older hardware, avoiding backpressure that might lead to dropped frames at the source.
+Specifically, the queue after the `audiomixer` and before the muxer was significantly enlarged (up to 3 seconds `max-size-time`) because earlier 10-buffer sizes caused audio dropouts when combined with heavy video encoding. Additionally, `do-timestamp=true` is used on `pulsesrc` so live audio correctly aligns with the pipeline clock even if processing is momentarily delayed.
 
 ## Encoder Strategy
-- Video: `x264enc` with `speed-preset=ultrafast tune=zerolatency` for minimal CPU footprint and lowest latency.
+- Video: `x264enc` with `speed-preset=ultrafast tune=zerolatency` to guarantee low CPU footprint on older hardware. We set a bitrate limit explicitly (4000 kbps for 15 FPS, 6000 kbps for 30 FPS) to balance visual quality without overwhelming the encoder and causing backpressure on the capture queues.
 - Audio: `avenc_aac` for reliable and standard audio encoding.
 
 ## Cleanup/Finalization

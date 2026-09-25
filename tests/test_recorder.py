@@ -35,6 +35,18 @@ class TestRecorder(unittest.TestCase):
         self.recorder.test_mode = False
         pipe_str4 = self.recorder.build_pipeline_string('screen', 15, 'mic', mic, '/tmp/out4.mkv', '100', 42)
         self.assertIn('pipewiresrc path=100 fd=42 ! videoconvert', pipe_str4)
+        self.assertIn('do-timestamp=true', pipe_str4)
+
+    def test_encoder_bitrate_selection(self):
+        mic = AudioDevice("fake_mic", "Fake Mic", False)
+
+        # Test 15 fps bitrate
+        pipe_str15 = self.recorder.build_pipeline_string('screen', 15, 'no_audio', mic, '/tmp/out15.mkv')
+        self.assertIn('bitrate=4000', pipe_str15)
+
+        # Test 30 fps bitrate
+        pipe_str30 = self.recorder.build_pipeline_string('screen', 30, 'no_audio', mic, '/tmp/out30.mkv')
+        self.assertIn('bitrate=6000', pipe_str30)
 
     def test_portal_variant_construction(self):
         # We need to verify that GLib Variant construction does not throw exceptions
@@ -101,3 +113,29 @@ class TestRecorder(unittest.TestCase):
 
         os.remove(output_file)
         os.rmdir(self.temp_dir)
+
+    def test_stop_error_cancels_timeout(self):
+        mic = AudioDevice("fake_mic", "Fake Mic", False)
+        output_file = self.recorder.start_recording('screen', 15, 'mic', mic, self.temp_dir)
+
+        self.recorder.stop_recording()
+        self.assertTrue(hasattr(self.recorder, '_stop_timeout_id'))
+
+        import gi
+        gi.require_version('Gst', '1.0')
+        from gi.repository import Gst, GLib
+
+        # Simulate ERROR
+        # Creating a GError requires GLib.Error, we can just mock the parse_error call via a mock Message
+        # Or we can just use a real Gst.Message.new_error
+        err = GLib.Error.new_literal(GLib.quark_from_string("test"), "test error", 1)
+        msg = Gst.Message.new_error(self.recorder.pipeline, err, "debug")
+
+        bus = self.recorder.pipeline.get_bus()
+        self.recorder.on_message(bus, msg)
+
+        self.assertFalse(hasattr(self.recorder, '_stop_timeout_id'))
+        self.assertFalse(self.recorder.is_recording)
+
+        if os.path.exists(output_file):
+            os.remove(output_file)
